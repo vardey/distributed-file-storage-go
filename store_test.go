@@ -2,12 +2,18 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 )
 
+func TestPathTransformFunc(t *testing.T) {
+	pathString := CASPathTransformFunc("myKeyForPath")
+	fmt.Println(pathString)
+}
+
 func TestStore(t *testing.T) {
 	myStoreOpts := StoreOpts{
-		PathTransformFunc: DefaultPathTransformFunc,
+		PathTransformFunc: CASPathTransformFunc,
 	}
 
 	myStore := NewStore(myStoreOpts)
