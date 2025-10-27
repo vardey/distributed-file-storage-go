@@ -9,6 +9,7 @@ type TCPTransportOpts struct {
 	ListenAddress string
 	ShakeHands    HandshakeFunc
 	Decoder       Decoder
+	OnPeer        func(*TCPPeer) error
 }
 
 type TCPPeer struct {
@@ -25,7 +26,11 @@ type TCPTransport struct {
 }
 
 func (peer *TCPPeer) Close() error {
-	return peer.conn.Close()
+	fmt.Printf("droppin peer: %+v", peer)
+	if peer.conn != nil {
+		return peer.conn.Close()
+	}
+	return nil
 }
 
 func NewTCPPeer(conn net.Conn, outbound bool) *TCPPeer {
@@ -35,15 +40,15 @@ func NewTCPPeer(conn net.Conn, outbound bool) *TCPPeer {
 	}
 }
 
-func Consume(t *TCPTransport) chan<- RPC {
-	return t.rpcch
-}
-
 func NewTCPTransport(opts TCPTransportOpts) *TCPTransport {
 	return &TCPTransport{
 		TCPTransportOpts: opts,
 		rpcch:            make(chan RPC),
 	}
+}
+
+func (t *TCPTransport) Consume() <-chan RPC {
+	return t.rpcch
 }
 
 func (t *TCPTransport) ListenAndAccept() error {
@@ -72,6 +77,7 @@ type Temp struct{}
 
 func (t *TCPTransport) handleConnection(conn net.Conn) {
 	peer := NewTCPPeer(conn, true)
+	defer peer.Close()
 
 	if err := t.ShakeHands(peer); err != nil {
 		peer.Close()
@@ -79,14 +85,21 @@ func (t *TCPTransport) handleConnection(conn net.Conn) {
 		return
 	}
 	fmt.Printf("New Connection incoming: %+v\n", peer)
-	rpc := &RPC{}
+	if t.OnPeer != nil {
+		if err := t.OnPeer(peer); err != nil {
+			return
+
+		}
+	}
+
+	rpc := RPC{}
 	for {
-		if err := t.Decoder.Decode(conn, rpc); err != nil {
+		if err := t.Decoder.Decode(conn, &rpc); err != nil {
 			fmt.Printf("TCP decode error: %s\n", err)
-			continue
+			return
 		}
 		rpc.From = conn.RemoteAddr()
-		fmt.Printf("Received message: %+v", rpc)
+		t.rpcch <- rpc
 	}
 
 }
